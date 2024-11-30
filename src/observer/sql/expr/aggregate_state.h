@@ -1,21 +1,8 @@
-/* Copyright (c) 2021 OceanBase and/or its affiliates. All rights reserved.
-miniob is licensed under Mulan PSL v2.
-You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at:
-         http://license.coscl.org.cn/MulanPSL2
-THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-See the Mulan PSL v2 for more details. */
+#pragma once
 
-template <class T>
-class SumState
-{
-public:
-  SumState() : value(0) {}
-  T    value;
-  void update(const T *values, int size);
-};
+#include <cstddef>  // for size_t
+#include <algorithm>  // for std::max/min
+#include "storage/field/field.h"
 
 template <typename T>
 struct MaxState {
@@ -24,7 +11,7 @@ struct MaxState {
     
     MaxState() : initialized(false) {}
     
-    void update(T* values, size_t count) {
+    void update(const T* values, size_t count) {
         for (size_t i = 0; i < count; i++) {
             if (!initialized) {
                 value = values[i];
@@ -43,7 +30,7 @@ struct MinState {
     
     MinState() : initialized(false) {}
     
-    void update(T* values, size_t count) {
+    void update(const T* values, size_t count) {
         for (size_t i = 0; i < count; i++) {
             if (!initialized) {
                 value = values[i];
@@ -60,8 +47,8 @@ struct CountState {
     
     CountState() : value(0) {}
     
-    void update(void* values, size_t count) {
-        value += count;
+    void update(const void* /*values*/, size_t count) {
+        value += static_cast<int64_t>(count);
     }
 };
 
@@ -72,14 +59,14 @@ struct AvgState {
     
     AvgState() : sum(0), count(0) {}
     
-    void update(T* values, size_t count) {
+    void update(const T* values, size_t count) {
         for (size_t i = 0; i < count; i++) {
             sum += values[i];
         }
-        count += count;
+        count += static_cast<int64_t>(count);
     }
     
-    float get_result() {
-        return static_cast<float>(sum) / count;
+    float get_result() const {
+        return count > 0 ? static_cast<float>(sum) / count : 0.0f;
     }
 };
