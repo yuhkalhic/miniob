@@ -19,38 +19,91 @@ using namespace common;
 
 AggregateVecPhysicalOperator::AggregateVecPhysicalOperator(vector<Expression *> &&expressions)
 {
-  aggregate_expressions_ = std::move(expressions);
-  value_expressions_.reserve(aggregate_expressions_.size());
+    aggregate_expressions_ = std::move(expressions);
+    value_expressions_.reserve(aggregate_expressions_.size());
 
-  ranges::for_each(aggregate_expressions_, [this](Expression *expr) {
-    auto *      aggregate_expr = static_cast<AggregateExpr *>(expr);
-    Expression *child_expr     = aggregate_expr->child().get();
-    ASSERT(child_expr != nullptr, "aggregation expression must have a child expression");
-    value_expressions_.emplace_back(child_expr);
-  });
+    ranges::for_each(aggregate_expressions_, [this](Expression *expr) {
+        auto *aggregate_expr = static_cast<AggregateExpr *>(expr);
+        Expression *child_expr = aggregate_expr->child().get();
+        ASSERT(child_expr != nullptr, "aggregation expression must have a child expression");
+        value_expressions_.emplace_back(child_expr);
+    });
 
-  for (size_t i = 0; i < aggregate_expressions_.size(); i++) {
-    auto &expr = aggregate_expressions_[i];
-    ASSERT(expr->type() == ExprType::AGGREGATION, "expected an aggregation expression");
-    auto *aggregate_expr = static_cast<AggregateExpr *>(expr);
+    for (size_t i = 0; i < aggregate_expressions_.size(); i++) {
+        auto &expr = aggregate_expressions_[i];
+        ASSERT(expr->type() == ExprType::AGGREGATION, "expected an aggregation expression");
+        auto *aggregate_expr = static_cast<AggregateExpr *>(expr);
 
-    if (aggregate_expr->aggregate_type() == AggregateExpr::Type::SUM) {
-      if (aggregate_expr->value_type() == AttrType::INTS) {
-        void *aggr_value                     = malloc(sizeof(SumState<int>));
-        ((SumState<int> *)aggr_value)->value = 0;
-        aggr_values_.insert(aggr_value);
-        output_chunk_.add_column(make_unique<Column>(AttrType::INTS, sizeof(int)), i);
-      } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
-        void *aggr_value                       = malloc(sizeof(SumState<float>));
-        ((SumState<float> *)aggr_value)->value = 0;
-        aggr_values_.insert(aggr_value);
-        output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
-      }
-    } else {
-      ASSERT(false, "not supported aggregation type");
+        switch (aggregate_expr->aggregate_type()) {
+            case AggregateExpr::Type::SUM: {
+                if (aggregate_expr->value_type() == AttrType::INTS) {
+                    void *aggr_value = malloc(sizeof(SumState<int>));
+                    new (aggr_value) SumState<int>();
+                    aggr_values_.insert(aggr_value);
+                    output_chunk_.add_column(make_unique<Column>(AttrType::INTS, sizeof(int)), i);
+                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                    void *aggr_value = malloc(sizeof(SumState<float>));
+                    new (aggr_value) SumState<float>();
+                    aggr_values_.insert(aggr_value);
+                    output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
+                }
+                break;
+            }
+            case AggregateExpr::Type::MAX: {
+                if (aggregate_expr->value_type() == AttrType::INTS) {
+                    void *aggr_value = malloc(sizeof(MaxState<int>));
+                    new (aggr_value) MaxState<int>();
+                    aggr_values_.insert(aggr_value);
+                    output_chunk_.add_column(make_unique<Column>(AttrType::INTS, sizeof(int)), i);
+                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                    void *aggr_value = malloc(sizeof(MaxState<float>));
+                    new (aggr_value) MaxState<float>();
+                    aggr_values_.insert(aggr_value);
+                    output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
+                }
+                break;
+            }
+            case AggregateExpr::Type::MIN: {
+                if (aggregate_expr->value_type() == AttrType::INTS) {
+                    void *aggr_value = malloc(sizeof(MinState<int>));
+                    new (aggr_value) MinState<int>();
+                    aggr_values_.insert(aggr_value);
+                    output_chunk_.add_column(make_unique<Column>(AttrType::INTS, sizeof(int)), i);
+                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                    void *aggr_value = malloc(sizeof(MinState<float>));
+                    new (aggr_value) MinState<float>();
+                    aggr_values_.insert(aggr_value);
+                    output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
+                }
+                break;
+            }
+            case AggregateExpr::Type::COUNT: {
+                void *aggr_value = malloc(sizeof(CountState));
+                new (aggr_value) CountState();
+                aggr_values_.insert(aggr_value);
+                output_chunk_.add_column(make_unique<Column>(AttrType::INTS, sizeof(int64_t)), i);
+                break;
+            }
+            case AggregateExpr::Type::AVG: {
+                if (aggregate_expr->value_type() == AttrType::INTS) {
+                    void *aggr_value = malloc(sizeof(AvgState<int>));
+                    new (aggr_value) AvgState<int>();
+                    aggr_values_.insert(aggr_value);
+                    output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
+                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                    void *aggr_value = malloc(sizeof(AvgState<float>));
+                    new (aggr_value) AvgState<float>();
+                    aggr_values_.insert(aggr_value);
+                    output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
+                }
+                break;
+            }
+            default:
+                ASSERT(false, "not supported aggregation type");
+        }
     }
-  }
 }
+
 
 RC AggregateVecPhysicalOperator::open(Trx *trx)
 {
@@ -99,8 +152,63 @@ void AggregateVecPhysicalOperator::update_aggregate_state(void *state, const Col
 
 RC AggregateVecPhysicalOperator::next(Chunk &chunk)
 {
-  // your code here
-  exit(-1);
+    if (chunk_.count() > 0) {
+        return RC::RECORD_EOF;
+    }
+
+    for (size_t i = 0; i < aggregate_expressions_.size(); i++) {
+        auto *aggregate_expr = static_cast<AggregateExpr *>(aggregate_expressions_[i]);
+        auto &output_column = output_chunk_.mutable_column(i);
+
+        switch (aggregate_expr->aggregate_type()) {
+            case AggregateExpr::Type::SUM: {
+                if (aggregate_expr->value_type() == AttrType::INTS) {
+                    append_to_column<SumState<int>, int>(aggr_values_.at(i), output_column);
+                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                    append_to_column<SumState<float>, float>(aggr_values_.at(i), output_column);
+                }
+                break;
+            }
+            case AggregateExpr::Type::MAX: {
+                if (aggregate_expr->value_type() == AttrType::INTS) {
+                    append_to_column<MaxState<int>, int>(aggr_values_.at(i), output_column);
+                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                    append_to_column<MaxState<float>, float>(aggr_values_.at(i), output_column);
+                }
+                break;
+            }
+            case AggregateExpr::Type::MIN: {
+                if (aggregate_expr->value_type() == AttrType::INTS) {
+                    append_to_column<MinState<int>, int>(aggr_values_.at(i), output_column);
+                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                    append_to_column<MinState<float>, float>(aggr_values_.at(i), output_column);
+                }
+                break;
+            }
+            case AggregateExpr::Type::COUNT: {
+                auto *state = reinterpret_cast<CountState *>(aggr_values_.at(i));
+                output_column.append_one((char *)&state->value);
+                break;
+            }
+            case AggregateExpr::Type::AVG: {
+                if (aggregate_expr->value_type() == AttrType::INTS) {
+                    auto *state = reinterpret_cast<AvgState<int> *>(aggr_values_.at(i));
+                    float result = state->get_result();
+                    output_column.append_one((char *)&result);
+                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                    auto *state = reinterpret_cast<AvgState<float> *>(aggr_values_.at(i));
+                    float result = state->get_result();
+                    output_column.append_one((char *)&result);
+                }
+                break;
+            }
+            default:
+                ASSERT(false, "not supported aggregation type");
+        }
+    }
+
+    chunk = std::move(output_chunk_);
+    return RC::SUCCESS;
 }
 
 RC AggregateVecPhysicalOperator::close()
