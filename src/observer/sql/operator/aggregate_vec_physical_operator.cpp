@@ -33,47 +33,54 @@ AggregateVecPhysicalOperator::AggregateVecPhysicalOperator(vector<Expression *> 
         auto &expr = aggregate_expressions_[i];
         ASSERT(expr->type() == ExprType::AGGREGATION, "expected an aggregation expression");
         auto *aggregate_expr = static_cast<AggregateExpr *>(expr);
+        AttrType value_type = aggregate_expr->value_type();
 
         switch (aggregate_expr->aggregate_type()) {
             case AggregateExpr::Type::SUM: {
-                if (aggregate_expr->value_type() == AttrType::INTS) {
+                if (value_type == AttrType::INTS) {
                     void *aggr_value = malloc(sizeof(SumState<int>));
                     new (aggr_value) SumState<int>();
                     aggr_values_.insert(aggr_value);
                     output_chunk_.add_column(make_unique<Column>(AttrType::INTS, sizeof(int)), i);
-                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                } else if (value_type == AttrType::FLOATS) {
                     void *aggr_value = malloc(sizeof(SumState<float>));
                     new (aggr_value) SumState<float>();
                     aggr_values_.insert(aggr_value);
                     output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
+                } else {
+                    ASSERT(false, "unsupported value type for SUM");
                 }
                 break;
             }
             case AggregateExpr::Type::MAX: {
-                if (aggregate_expr->value_type() == AttrType::INTS) {
+                if (value_type == AttrType::INTS) {
                     void *aggr_value = malloc(sizeof(MaxState<int>));
                     new (aggr_value) MaxState<int>();
                     aggr_values_.insert(aggr_value);
                     output_chunk_.add_column(make_unique<Column>(AttrType::INTS, sizeof(int)), i);
-                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                } else if (value_type == AttrType::FLOATS) {
                     void *aggr_value = malloc(sizeof(MaxState<float>));
                     new (aggr_value) MaxState<float>();
                     aggr_values_.insert(aggr_value);
                     output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
+                } else {
+                    ASSERT(false, "unsupported value type for MAX");
                 }
                 break;
             }
             case AggregateExpr::Type::MIN: {
-                if (aggregate_expr->value_type() == AttrType::INTS) {
+                if (value_type == AttrType::INTS) {
                     void *aggr_value = malloc(sizeof(MinState<int>));
                     new (aggr_value) MinState<int>();
                     aggr_values_.insert(aggr_value);
                     output_chunk_.add_column(make_unique<Column>(AttrType::INTS, sizeof(int)), i);
-                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                } else if (value_type == AttrType::FLOATS) {
                     void *aggr_value = malloc(sizeof(MinState<float>));
                     new (aggr_value) MinState<float>();
                     aggr_values_.insert(aggr_value);
                     output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
+                } else {
+                    ASSERT(false, "unsupported value type for MIN");
                 }
                 break;
             }
@@ -85,16 +92,18 @@ AggregateVecPhysicalOperator::AggregateVecPhysicalOperator(vector<Expression *> 
                 break;
             }
             case AggregateExpr::Type::AVG: {
-                if (aggregate_expr->value_type() == AttrType::INTS) {
+                if (value_type == AttrType::INTS) {
                     void *aggr_value = malloc(sizeof(AvgState<int>));
                     new (aggr_value) AvgState<int>();
                     aggr_values_.insert(aggr_value);
                     output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
-                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                } else if (value_type == AttrType::FLOATS) {
                     void *aggr_value = malloc(sizeof(AvgState<float>));
                     new (aggr_value) AvgState<float>();
                     aggr_values_.insert(aggr_value);
                     output_chunk_.add_column(make_unique<Column>(AttrType::FLOATS, sizeof(float)), i);
+                } else {
+                    ASSERT(false, "unsupported value type for AVG");
                 }
                 break;
             }
@@ -159,29 +168,55 @@ RC AggregateVecPhysicalOperator::next(Chunk &chunk)
     for (size_t i = 0; i < aggregate_expressions_.size(); i++) {
         auto *aggregate_expr = static_cast<AggregateExpr *>(aggregate_expressions_[i]);
         auto &output_column = output_chunk_.mutable_column(i);
+        AttrType value_type = aggregate_expr->value_type();
 
         switch (aggregate_expr->aggregate_type()) {
             case AggregateExpr::Type::SUM: {
-                if (aggregate_expr->value_type() == AttrType::INTS) {
+                if (value_type == AttrType::INTS) {
                     append_to_column<SumState<int>, int>(aggr_values_.at(i), output_column);
-                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                } else if (value_type == AttrType::FLOATS) {
                     append_to_column<SumState<float>, float>(aggr_values_.at(i), output_column);
                 }
                 break;
             }
             case AggregateExpr::Type::MAX: {
-                if (aggregate_expr->value_type() == AttrType::INTS) {
-                    append_to_column<MaxState<int>, int>(aggr_values_.at(i), output_column);
-                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
-                    append_to_column<MaxState<float>, float>(aggr_values_.at(i), output_column);
+                if (value_type == AttrType::INTS) {
+                    auto *state = reinterpret_cast<MaxState<int> *>(aggr_values_.at(i));
+                    if (state->initialized) {
+                        output_column.append_one((char *)&state->value);
+                    } else {
+                        // Handle uninitialized case (no rows or all NULL)
+                        int null_value = 0;  // or handle NULL appropriately
+                        output_column.append_one((char *)&null_value);
+                    }
+                } else if (value_type == AttrType::FLOATS) {
+                    auto *state = reinterpret_cast<MaxState<float> *>(aggr_values_.at(i));
+                    if (state->initialized) {
+                        output_column.append_one((char *)&state->value);
+                    } else {
+                        float null_value = 0.0f;  // or handle NULL appropriately
+                        output_column.append_one((char *)&null_value);
+                    }
                 }
                 break;
             }
             case AggregateExpr::Type::MIN: {
-                if (aggregate_expr->value_type() == AttrType::INTS) {
-                    append_to_column<MinState<int>, int>(aggr_values_.at(i), output_column);
-                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
-                    append_to_column<MinState<float>, float>(aggr_values_.at(i), output_column);
+                if (value_type == AttrType::INTS) {
+                    auto *state = reinterpret_cast<MinState<int> *>(aggr_values_.at(i));
+                    if (state->initialized) {
+                        output_column.append_one((char *)&state->value);
+                    } else {
+                        int null_value = 0;  // or handle NULL appropriately
+                        output_column.append_one((char *)&null_value);
+                    }
+                } else if (value_type == AttrType::FLOATS) {
+                    auto *state = reinterpret_cast<MinState<float> *>(aggr_values_.at(i));
+                    if (state->initialized) {
+                        output_column.append_one((char *)&state->value);
+                    } else {
+                        float null_value = 0.0f;  // or handle NULL appropriately
+                        output_column.append_one((char *)&null_value);
+                    }
                 }
                 break;
             }
@@ -191,11 +226,11 @@ RC AggregateVecPhysicalOperator::next(Chunk &chunk)
                 break;
             }
             case AggregateExpr::Type::AVG: {
-                if (aggregate_expr->value_type() == AttrType::INTS) {
+                if (value_type == AttrType::INTS) {
                     auto *state = reinterpret_cast<AvgState<int> *>(aggr_values_.at(i));
                     float result = state->get_result();
                     output_column.append_one((char *)&result);
-                } else if (aggregate_expr->value_type() == AttrType::FLOATS) {
+                } else if (value_type == AttrType::FLOATS) {
                     auto *state = reinterpret_cast<AvgState<float> *>(aggr_values_.at(i));
                     float result = state->get_result();
                     output_column.append_one((char *)&result);
