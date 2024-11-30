@@ -1,8 +1,23 @@
+// aggregate_state.h
+
 #pragma once
 
 #include <cstddef>  // for size_t
 #include <algorithm>  // for std::max/min
 #include "storage/field/field.h"
+
+template <typename T>
+struct SumState {
+    T value;
+    
+    SumState() : value(0) {}
+    
+    void update(const T* values, size_t count) {
+        for (size_t i = 0; i < count; i++) {
+            value += values[i];
+        }
+    }
+};
 
 template <typename T>
 struct MaxState {
@@ -70,3 +85,13 @@ struct AvgState {
         return count > 0 ? static_cast<float>(sum) / count : 0.0f;
     }
 };
+
+// 在同一个头文件中提供模板特化的声明
+template class SumState<int>;
+template class SumState<float>;
+template class MaxState<int>;
+template class MaxState<float>;
+template class MinState<int>;
+template class MinState<float>;
+template class AvgState<int>;
+template class AvgState<float>;
