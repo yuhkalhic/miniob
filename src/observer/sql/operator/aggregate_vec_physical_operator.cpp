@@ -165,6 +165,8 @@ RC AggregateVecPhysicalOperator::next(Chunk &chunk)
         return RC::RECORD_EOF;
     }
 
+    output_chunk_.reset();
+    
     for (size_t i = 0; i < aggregate_expressions_.size(); i++) {
         auto *aggregate_expr = static_cast<AggregateExpr *>(aggregate_expressions_[i]);
         auto &output_column = output_chunk_.mutable_column(i);
@@ -185,8 +187,7 @@ RC AggregateVecPhysicalOperator::next(Chunk &chunk)
                     if (state->initialized) {
                         output_column.append_one((char *)&state->value);
                     } else {
-                        // Handle uninitialized case (no rows or all NULL)
-                        int null_value = 0;  // or handle NULL appropriately
+                        int null_value = 0;
                         output_column.append_one((char *)&null_value);
                     }
                 } else if (value_type == AttrType::FLOATS) {
@@ -194,7 +195,7 @@ RC AggregateVecPhysicalOperator::next(Chunk &chunk)
                     if (state->initialized) {
                         output_column.append_one((char *)&state->value);
                     } else {
-                        float null_value = 0.0f;  // or handle NULL appropriately
+                        float null_value = 0.0f;
                         output_column.append_one((char *)&null_value);
                     }
                 }
@@ -206,7 +207,7 @@ RC AggregateVecPhysicalOperator::next(Chunk &chunk)
                     if (state->initialized) {
                         output_column.append_one((char *)&state->value);
                     } else {
-                        int null_value = 0;  // or handle NULL appropriately
+                        int null_value = 0;
                         output_column.append_one((char *)&null_value);
                     }
                 } else if (value_type == AttrType::FLOATS) {
@@ -214,7 +215,7 @@ RC AggregateVecPhysicalOperator::next(Chunk &chunk)
                     if (state->initialized) {
                         output_column.append_one((char *)&state->value);
                     } else {
-                        float null_value = 0.0f;  // or handle NULL appropriately
+                        float null_value = 0.0f;
                         output_column.append_one((char *)&null_value);
                     }
                 }
